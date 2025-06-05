@@ -4,12 +4,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 # SiLU https://arxiv.org/pdf/1606.08415.pdf ----------------------------------------------------------------------------
 class SiLU(nn.Module):  # export-friendly version of nn.SiLU()
     @staticmethod
     def forward(x):
         return x * torch.sigmoid(x)
+    
+class Swish(nn.Module):
+    @staticmethod
+    def forward(x):
+        return x * torch.sigmoid(2*x)
 
 
 class Hardswish(nn.Module):  # export-friendly version of nn.Hardswish()
@@ -70,3 +74,31 @@ class FReLU(nn.Module):
 
     def forward(self, x):
         return torch.max(x, self.bn(self.conv(x)))
+    
+class GELU(nn.Module):
+    def __init__(self):
+        super(GELU, self).__init__()
+
+    def forward(self, x):
+        return 0.5 * x * (1 + torch.tanh(torch.sqrt(2 / torch.pi) * (x + 0.044715 * torch.pow(x, 3))))
+
+
+class Mish(nn.Module):
+    def __init__(self):
+        super(Mish, self).__init__()
+
+    def forward(self, x):
+        return x * torch.tanh(F.softplus(x))
+    
+class APTxActivation(nn.Module):
+    def __init__(self, alpha=1.0, beta=1.0, gamma=0.5):
+        super(APTxActivation, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+
+    def forward(self, x):
+        # APTx activation function: (alpha + tanh(beta * x)) * gamma * x
+        return (self.alpha + torch.tanh(self.beta * x)) * self.gamma * x
+    
+

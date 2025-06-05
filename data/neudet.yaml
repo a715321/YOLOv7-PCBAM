@@ -1,0 +1,15 @@
+train: /home/yhshih/yolov7/NEUDET/train  # 118287 images
+val: /home/yhshih/yolov7/NEUDET/valid  # 5000 images
+#test: /home/yhshih/yolov7/NEUDET/test # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
+
+# number of classes
+nc: 6
+
+# class names
+names: ['crazing', 'inclusion', 'patches', 'pitted_surface', 'rolled-in_scale', 'scratches']
+# roboflow:
+#   workspace: school-fa4gv
+#   project: neu-det-49rhz
+#   version: 1
+#   license: CC BY 4.0
+#   url: https://universe.roboflow.com/school-fa4gv/neu-det-49rhz/dataset/1

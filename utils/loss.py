@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.general import bbox_iou, bbox_alpha_iou, box_iou, box_giou, box_diou, box_ciou, xywh2xyxy
+from utils.general import bbox_iou, bbox_alpha_iou, box_iou, box_giou, box_diou, box_ciou, xywh2xyxy , shape_iou
 from utils.torch_utils import is_parallel
 
 
@@ -417,7 +417,36 @@ class APLoss(torch.autograd.Function):
     def backward(ctx, out_grad1):
         g1, =ctx.saved_tensors
         return g1*out_grad1, None, None
+def wasserstein_loss(pred, target, eps=1e-7, constant=12.8):
+    r"""`Implementation of paper `Enhancing Geometric Factors into
+    Model Learning and Inference for Object Detection and Instance
+    Segmentation <https://arxiv.org/abs/2005.03572>`_.
+    Code is modified from https://github.com/Zzh-tju/CIoU.
+    Args:
+        pred (Tensor): Predicted bboxes of format (x_center, y_center, w, h),
+            shape (n, 4).
+        target (Tensor): Corresponding gt bboxes, shape (n, 4).
+        eps (float): Eps to avoid log(0).
+    Return:
+        Tensor: Loss tensor.
+    """
 
+    center1 = pred[:, :2]
+    center2 = target[:, :2]
+
+    whs = center1[:, :2] - center2[:, :2]
+
+    center_distance = whs[:, 0] * whs[:, 0] + whs[:, 1] * whs[:, 1] + eps #
+
+    w1 = pred[:, 2]  + eps
+    h1 = pred[:, 3]  + eps
+    w2 = target[:, 2] + eps
+    h2 = target[:, 3] + eps
+
+    wh_distance = ((w1 - w2) ** 2 + (h1 - h2) ** 2) / 4
+
+    wasserstein_2 = center_distance + wh_distance
+    return torch.exp(-torch.sqrt(wasserstein_2) / constant)
 
 class ComputeLoss:
     # Compute losses
@@ -605,9 +634,15 @@ class ComputeLossOTA:
                 selected_tbox[:, :2] -= grid
                 iou = bbox_iou(pbox.T, selected_tbox, x1y1x2y2=False, CIoU=True)  # iou(prediction, target)
                 lbox += (1.0 - iou).mean()  # iou loss
+                #nwd = wasserstein_loss(pbox, selected_tbox)
+                #iou_ratio = 0.7
+                #lbox += (1 - iou_ratio) * (1.0 - nwd).mean() + iou_ratio * (1.0 - iou).mean()  # iou loss
 
                 # Objectness
+                #iou = (iou.detach() * iou_ratio + nwd.detach() * (1 - iou_ratio)).clamp(0, 1).type(tobj.dtype)
+                # Objectness
                 tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
+                #tobj[b, a, gj, gi] = (1.0 - self.gr) + self.gr * iou
 
                 # Classification
                 selected_tcls = targets[i][:, 1].long()
@@ -634,6 +669,7 @@ class ComputeLossOTA:
 
         loss = lbox + lobj + lcls
         return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+
 
     def build_targets(self, p, targets, imgs):
         
@@ -790,7 +826,7 @@ class ComputeLossOTA:
                 matching_targets[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
                 matching_anchs[i] = torch.tensor([], device='cuda:0', dtype=torch.int64)
 
-        return matching_bs, matching_as, matching_gjs, matching_gis, matching_targets, matching_anchs           
+        return matching_bs, matching_as, matching_gjs, matching_gis, matching_targets, matching_anchs        
 
     def find_3_positive(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)

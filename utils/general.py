@@ -341,6 +341,76 @@ def clip_coords(boxes, img_shape):
     boxes[:, 3].clamp_(0, img_shape[0])  # y2
 
 
+import numpy as np
+import torch, math
+
+class WIoU_Scale:
+    ''' monotonous: {
+            None: origin v1
+            True: monotonic FM v2
+            False: non-monotonic FM v3
+        }
+        momentum: The momentum of running mean'''
+    
+    iou_mean = 1.
+    monotonous = False
+    _momentum = 1 - 0.5 ** (1 / 7000)
+    _is_train = True
+
+    def __init__(self, iou):
+        self.iou = iou
+        self._update(self)
+    
+    @classmethod
+    def _update(cls, self):
+        if cls._is_train: cls.iou_mean = (1 - cls._momentum) * cls.iou_mean + \
+                                         cls._momentum * self.iou.detach().mean().item()
+    
+    @classmethod
+    def _scaled_loss(cls, self, gamma=1.9, delta=3):
+        if isinstance(self.monotonous, bool):
+            if self.monotonous:
+                return (self.iou.detach() / self.iou_mean).sqrt()
+            else:
+                beta = self.iou.detach() / self.iou_mean
+                alpha = delta * torch.pow(gamma, beta - delta)
+                return beta / alpha
+        return 1
+    
+
+class WIoU_Scale:
+    ''' monotonous: {
+            None: origin v1
+            True: monotonic FM v2
+            False: non-monotonic FM v3
+        }
+        momentum: The momentum of running mean'''
+    
+    iou_mean = 1.
+    monotonous = False
+    _momentum = 1 - 0.5 ** (1 / 7000)
+    _is_train = True
+
+    def __init__(self, iou):
+        self.iou = iou
+        self._update(self)
+    
+    @classmethod
+    def _update(cls, self):
+        if cls._is_train: cls.iou_mean = (1 - cls._momentum) * cls.iou_mean + \
+                                         cls._momentum * self.iou.detach().mean().item()
+    
+    @classmethod
+    def _scaled_loss(cls, self, gamma=1.9, delta=3):
+        if isinstance(self.monotonous, bool):
+            if self.monotonous:
+                return (self.iou.detach() / self.iou_mean).sqrt()
+            else:
+                beta = self.iou.detach() / self.iou_mean
+                alpha = delta * torch.pow(gamma, beta - delta)
+                return beta / alpha
+        return 1
+
 def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
     box2 = box2.T
@@ -387,6 +457,49 @@ def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, eps=
         return iou  # IoU
 
 
+def shape_iou(box1, box2, x1y1x2y2=True, scale = 1.0, eps=1e-7):
+    # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
+    box2 = box2.T
+ 
+    # Get the coordinates of bounding boxes
+    if x1y1x2y2:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
+    else:  # transform from xywh to xyxy
+        b1_x1, b1_x2 = box1[0] - box1[2] / 2, box1[0] + box1[2] / 2
+        b1_y1, b1_y2 = box1[1] - box1[3] / 2, box1[1] + box1[3] / 2
+        b2_x1, b2_x2 = box2[0] - box2[2] / 2, box2[0] + box2[2] / 2
+        b2_y1, b2_y2 = box2[1] - box2[3] / 2, box2[1] + box2[3] / 2
+ 
+    # Intersection area
+    inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
+            (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
+ 
+    # Union Area
+    w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
+    w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+    union = w1 * h1 + w2 * h2 - inter + eps
+ 
+    iou = inter / union
+
+    ww = 2 * torch.pow(w2, scale) / (torch.pow(w2, scale) + torch.pow(h2, scale))
+    hh = 2 * torch.pow(h2, scale) / (torch.pow(w2, scale) + torch.pow(h2, scale))
+    cw = torch.max(b1_x2, b2_x2) - torch.min(b1_x1, b2_x1)  # convex width
+    ch = torch.max(b1_y2, b2_y2) - torch.min(b1_y1, b2_y1)  # convex height
+    c2 = cw ** 2 + ch ** 2 + eps                            # convex diagonal squared
+    center_distance_x = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2) / 4
+    center_distance_y = ((b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4
+    center_distance = hh * center_distance_x + ww * center_distance_y
+    distance = center_distance / c2
+
+    #Shape-Shape    #Shape-Shape    #Shape-Shape    #Shape-Shape    #Shape-Shape    #Shape-Shape    #Shape-Shape    #Shape-Shape    
+    omiga_w = hh * torch.abs(w1 - w2) / torch.max(w1, w2)
+    omiga_h = ww * torch.abs(h1 - h2) / torch.max(h1, h2)
+    shape_cost = torch.pow(1 - torch.exp(-1 * omiga_w), 4) + torch.pow(1 - torch.exp(-1 * omiga_h), 4)
+    
+    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU    #Shape-IoU
+    iou = iou - distance - 0.5 * ( shape_cost)
+    return iou  # IoU
 
 
 def bbox_alpha_iou(box1, box2, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, alpha=2, eps=1e-9):
@@ -605,6 +718,9 @@ def box_diou(box1, box2, eps: float = 1e-7):
     return iou - (centers_distance_squared / diagonal_distance_squared)
 
 
+
+
+
 def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
                         labels=()):
     """Runs Non-Maximum Suppression (NMS) on inference results
@@ -682,6 +798,7 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        #i = soft_nms(boxes, scores, iou_thres)
         if i.shape[0] > max_det:  # limit detections
             i = i[:max_det]
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)

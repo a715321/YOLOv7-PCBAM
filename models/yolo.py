@@ -101,7 +101,7 @@ class IDetect(nn.Module):
     include_nms = False
     concat = False
 
-    def __init__(self, nc=80, anchors=(), ch=()):  # detection layer
+    def __init__(self, nc=6, anchors=(), ch=()):  # detection layer
         super(IDetect, self).__init__()
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
@@ -759,7 +759,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                  RepResX, RepResXCSPA, RepResXCSPB, RepResXCSPC, 
                  Ghost, GhostCSPA, GhostCSPB, GhostCSPC,
                  SwinTransformerBlock, STCSPA, STCSPB, STCSPC,
-                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC]:
+                 SwinTransformer2Block, ST2CSPA, ST2CSPB, ST2CSPC,CBAM,PConv,CoordConv,SEAttention,GAM_Attention,SPPCSPC_SE,DCNv2,PConv_bn,PConv]:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
@@ -797,8 +797,15 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+
+        elif m in [CoordAtt]:
+            c1, c2 = ch[f], args[0]
+            if c2 != no:  # if not outputss
+                c2 = make_divisible(c2 * gw, 8)
+            args = [c1, c2, *args[1:]]
         else:
             c2 = ch[f]
+
 
         m_ = nn.Sequential(*[m(*args) for _ in range(n)]) if n > 1 else m(*args)  # module
         t = str(m)[8:-2].replace('__main__.', '')  # module type
@@ -815,7 +822,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolor-csp-c.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='/home/yhshih/yolov7/cfg/training/yolov7.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     opt = parser.parse_args()

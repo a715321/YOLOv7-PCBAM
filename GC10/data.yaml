@@ -1,0 +1,13 @@
+train: /home/yhshih/yolov7/GC10/train/images
+val: /home/yhshih/yolov7/GC10/valid/images
+test: /home/yhshih/yolov7/GC10/test/images
+
+nc: 10
+names: ['crease', 'crescent_gap', 'inclusion', 'oil_spot', 'punching_hole', 'rolled_pit', 'silk_spot', 'waist_folding', 'water_spot', 'welding_line']
+
+roboflow:
+  workspace: machinelearning-p49ei
+  project: gc10-det-dataset
+  version: 3
+  license: Public Domain
+  url: https://universe.roboflow.com/machinelearning-p49ei/gc10-det-dataset/dataset/3
